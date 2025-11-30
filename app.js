@@ -2029,7 +2029,10 @@ function updateCanvas() {
     // Draw screenshot (2D mode) or 3D phone model
     if (state.screenshots.length > 0) {
         if (state.use3D && typeof renderThreeJSToCanvas === 'function' && phoneModelLoaded) {
-            // In 3D mode, render the phone model onto the canvas
+            // In 3D mode, update the screen texture and render the phone model
+            if (typeof updateScreenTexture === 'function') {
+                updateScreenTexture();
+            }
             renderThreeJSToCanvas(canvas, dims.width, dims.height);
         } else if (!state.use3D) {
             // In 2D mode, draw the screenshot normally
