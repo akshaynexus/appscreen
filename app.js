@@ -1735,6 +1735,19 @@ function setupEventListeners() {
         translateAllText();
     });
 
+    // Magical Titles button (in header)
+    document.getElementById('magical-titles-btn').addEventListener('click', () => {
+        dismissMagicalTitlesTooltip();
+        showMagicalTitlesDialog();
+    });
+
+    // Magical Titles modal events
+    document.getElementById('magical-titles-cancel').addEventListener('click', hideMagicalTitlesDialog);
+    document.getElementById('magical-titles-confirm').addEventListener('click', generateMagicalTitles);
+    document.getElementById('magical-titles-modal').addEventListener('click', (e) => {
+        if (e.target.id === 'magical-titles-modal') hideMagicalTitlesDialog();
+    });
+
     // Languages modal events
     document.getElementById('languages-modal-close').addEventListener('click', closeLanguagesModal);
     document.getElementById('languages-modal-done').addEventListener('click', closeLanguagesModal);
@@ -3840,6 +3853,8 @@ function createNewScreenshot(img, src, name, lang, deviceType) {
     updateScreenshotList();
     if (state.screenshots.length === 1) {
         state.selectedIndex = 0;
+        // Show Magical Titles tooltip hint for first screenshot
+        setTimeout(() => showMagicalTitlesTooltip(), 500);
     }
 }
 
