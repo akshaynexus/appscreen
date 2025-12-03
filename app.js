@@ -1673,6 +1673,16 @@ function setupEventListeners() {
         document.getElementById('delete-project-modal').classList.remove('visible');
     });
 
+    // Apply style to all modal buttons
+    document.getElementById('apply-style-cancel').addEventListener('click', () => {
+        document.getElementById('apply-style-modal').classList.remove('visible');
+    });
+
+    document.getElementById('apply-style-confirm').addEventListener('click', () => {
+        applyStyleToAll();
+        document.getElementById('apply-style-modal').classList.remove('visible');
+    });
+
     // Close modals on overlay click
     document.getElementById('project-modal').addEventListener('click', (e) => {
         if (e.target.id === 'project-modal') {
@@ -1683,6 +1693,12 @@ function setupEventListeners() {
     document.getElementById('delete-project-modal').addEventListener('click', (e) => {
         if (e.target.id === 'delete-project-modal') {
             document.getElementById('delete-project-modal').classList.remove('visible');
+        }
+    });
+
+    document.getElementById('apply-style-modal').addEventListener('click', (e) => {
+        if (e.target.id === 'apply-style-modal') {
+            document.getElementById('apply-style-modal').classList.remove('visible');
         }
     });
 
@@ -1711,6 +1727,12 @@ function setupEventListeners() {
     // Edit Languages button
     document.getElementById('edit-languages-btn').addEventListener('click', () => {
         openLanguagesModal();
+    });
+
+    // Translate All button
+    document.getElementById('translate-all-btn').addEventListener('click', () => {
+        document.getElementById('language-menu').classList.remove('visible');
+        translateAllText();
     });
 
     // Languages modal events
@@ -2851,7 +2873,7 @@ async function aiTranslateAll() {
 
     // Get selected provider and API key
     const provider = getSelectedProvider();
-    const providerConfig = aiProviders[provider];
+    const providerConfig = llmProviders[provider];
     const apiKey = localStorage.getItem(providerConfig.storageKey);
 
     if (!apiKey) {
@@ -2955,8 +2977,426 @@ Translate to these language codes: ${targetLangs.join(', ')}`;
     }
 }
 
+// Helper function to show styled alert modal
+function showAppAlert(message, type = 'info') {
+    return new Promise((resolve) => {
+        const iconBg = type === 'error' ? 'rgba(255, 69, 58, 0.2)' :
+                       type === 'success' ? 'rgba(52, 199, 89, 0.2)' :
+                       'rgba(10, 132, 255, 0.2)';
+        const iconColor = type === 'error' ? '#ff453a' :
+                          type === 'success' ? '#34c759' :
+                          'var(--accent)';
+        const iconPath = type === 'error' ? '<path d="M12 9v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>' :
+                         type === 'success' ? '<path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>' :
+                         '<path d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>';
+
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay visible';
+        overlay.innerHTML = `
+            <div class="modal">
+                <div class="modal-icon" style="background: ${iconBg};">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: ${iconColor};">
+                        ${iconPath}
+                    </svg>
+                </div>
+                <p class="modal-message" style="margin: 16px 0;">${message}</p>
+                <div class="modal-buttons">
+                    <button class="modal-btn modal-btn-confirm" style="background: var(--accent);">OK</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+
+        const okBtn = overlay.querySelector('.modal-btn-confirm');
+        const close = () => {
+            overlay.remove();
+            resolve();
+        };
+        okBtn.addEventListener('click', close);
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) close();
+        });
+    });
+}
+
+// Helper function to show styled confirm modal
+function showAppConfirm(message, confirmText = 'Confirm', cancelText = 'Cancel') {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay visible';
+        overlay.innerHTML = `
+            <div class="modal">
+                <div class="modal-icon" style="background: rgba(10, 132, 255, 0.2);">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent);">
+                        <path d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                </div>
+                <p class="modal-message" style="margin: 16px 0; white-space: pre-line;">${message}</p>
+                <div class="modal-buttons">
+                    <button class="modal-btn modal-btn-cancel">${cancelText}</button>
+                    <button class="modal-btn modal-btn-confirm" style="background: var(--accent);">${confirmText}</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+
+        const confirmBtn = overlay.querySelector('.modal-btn-confirm');
+        const cancelBtn = overlay.querySelector('.modal-btn-cancel');
+
+        confirmBtn.addEventListener('click', () => {
+            overlay.remove();
+            resolve(true);
+        });
+        cancelBtn.addEventListener('click', () => {
+            overlay.remove();
+            resolve(false);
+        });
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                overlay.remove();
+                resolve(false);
+            }
+        });
+    });
+}
+
+// Show translate confirmation dialog with source language selector
+function showTranslateConfirmDialog(providerName) {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay visible';
+
+        // Default to first project language
+        const defaultLang = state.projectLanguages[0] || 'en';
+
+        // Build language options
+        const languageOptions = state.projectLanguages.map(lang => {
+            const flag = languageFlags[lang] || '🏳️';
+            const name = languageNames[lang] || lang.toUpperCase();
+            const selected = lang === defaultLang ? 'selected' : '';
+            return `<option value="${lang}" ${selected}>${flag} ${name}</option>`;
+        }).join('');
+
+        // Count texts for each language
+        const getTextCount = (lang) => {
+            let count = 0;
+            state.screenshots.forEach(screenshot => {
+                const text = screenshot.text || state.text;
+                if (text.headlines?.[lang]?.trim()) count++;
+                if (text.subheadlines?.[lang]?.trim()) count++;
+            });
+            return count;
+        };
+
+        const initialCount = getTextCount(defaultLang);
+        const targetCount = state.projectLanguages.length - 1;
+
+        overlay.innerHTML = `
+            <div class="modal" style="max-width: 380px;">
+                <div class="modal-icon" style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.2) 0%, rgba(118, 75, 162, 0.2) 100%);">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: #764ba2;">
+                        <path d="M5 8l6 6M4 14l6-6 2-3M2 5h12M7 2v3M22 22l-5-10-5 10M14 18h6"/>
+                    </svg>
+                </div>
+                <h3 class="modal-title">Translate All Text</h3>
+                <p class="modal-message" style="margin-bottom: 16px;">Translate headlines and subheadlines from one language to all other project languages.</p>
+
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px;">Source Language</label>
+                    <select id="translate-source-lang" style="width: 100%; padding: 10px 12px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 8px; color: var(--text-primary); font-size: 14px; cursor: pointer;">
+                        ${languageOptions}
+                    </select>
+                </div>
+
+                <div style="background: var(--bg-tertiary); border-radius: 8px; padding: 12px; margin-bottom: 16px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;">
+                        <span style="color: var(--text-secondary);">Texts to translate:</span>
+                        <span id="translate-text-count" style="color: var(--text-primary); font-weight: 500;">${initialCount}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;">
+                        <span style="color: var(--text-secondary);">Target languages:</span>
+                        <span style="color: var(--text-primary); font-weight: 500;">${targetCount}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 13px;">
+                        <span style="color: var(--text-secondary);">Provider:</span>
+                        <span style="color: var(--text-primary); font-weight: 500;">${providerName}</span>
+                    </div>
+                </div>
+
+                <div class="modal-buttons">
+                    <button class="modal-btn modal-btn-cancel" id="translate-cancel">Cancel</button>
+                    <button class="modal-btn modal-btn-confirm" id="translate-confirm" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">Translate</button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(overlay);
+
+        const select = document.getElementById('translate-source-lang');
+        const countEl = document.getElementById('translate-text-count');
+        const confirmBtn = document.getElementById('translate-confirm');
+        const cancelBtn = document.getElementById('translate-cancel');
+
+        // Update count when language changes
+        select.addEventListener('change', () => {
+            const count = getTextCount(select.value);
+            countEl.textContent = count;
+            confirmBtn.disabled = count === 0;
+            if (count === 0) {
+                confirmBtn.style.opacity = '0.5';
+            } else {
+                confirmBtn.style.opacity = '1';
+            }
+        });
+
+        // Initial state
+        if (initialCount === 0) {
+            confirmBtn.disabled = true;
+            confirmBtn.style.opacity = '0.5';
+        }
+
+        confirmBtn.addEventListener('click', () => {
+            overlay.remove();
+            resolve(select.value);
+        });
+
+        cancelBtn.addEventListener('click', () => {
+            overlay.remove();
+            resolve(null);
+        });
+
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                overlay.remove();
+                resolve(null);
+            }
+        });
+    });
+}
+
+// Translate all text (headlines + subheadlines) from selected source language to all other project languages
+async function translateAllText() {
+    if (state.projectLanguages.length < 2) {
+        await showAppAlert('Add more languages to your project first (via the language menu).', 'info');
+        return;
+    }
+
+    // Get selected provider and API key
+    const provider = getSelectedProvider();
+    const providerConfig = llmProviders[provider];
+    const apiKey = localStorage.getItem(providerConfig.storageKey);
+
+    if (!apiKey) {
+        await showAppAlert('Add your LLM API key in Settings to use AI translation.', 'error');
+        return;
+    }
+
+    // Show confirmation dialog with source language selector
+    const sourceLang = await showTranslateConfirmDialog(providerConfig.name);
+    if (!sourceLang) return; // User cancelled
+
+    const targetLangs = state.projectLanguages.filter(lang => lang !== sourceLang);
+
+    // Collect all texts that need translation
+    const textsToTranslate = [];
+
+    // Go through all screenshots and collect headlines/subheadlines
+    state.screenshots.forEach((screenshot, index) => {
+        const text = screenshot.text || state.text;
+
+        // Headline
+        const headline = text.headlines?.[sourceLang] || '';
+        if (headline.trim()) {
+            textsToTranslate.push({
+                type: 'headline',
+                screenshotIndex: index,
+                text: headline
+            });
+        }
+
+        // Subheadline
+        const subheadline = text.subheadlines?.[sourceLang] || '';
+        if (subheadline.trim()) {
+            textsToTranslate.push({
+                type: 'subheadline',
+                screenshotIndex: index,
+                text: subheadline
+            });
+        }
+    });
+
+    if (textsToTranslate.length === 0) {
+        await showAppAlert(`No text found in ${languageNames[sourceLang] || sourceLang}. Add headlines or subheadlines first.`, 'info');
+        return;
+    }
+
+    // Create progress dialog with spinner
+    const progressOverlay = document.createElement('div');
+    progressOverlay.className = 'modal-overlay visible';
+    progressOverlay.id = 'translate-progress-overlay';
+    progressOverlay.innerHTML = `
+        <div class="modal" style="text-align: center; min-width: 320px;">
+            <div class="modal-icon" style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.2) 0%, rgba(118, 75, 162, 0.2) 100%);">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: #764ba2; animation: spin 1s linear infinite;">
+                    <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+                </svg>
+            </div>
+            <h3 class="modal-title">Translating...</h3>
+            <p class="modal-message" id="translate-progress-text">Sending to AI...</p>
+            <p class="modal-message" id="translate-progress-detail" style="font-size: 11px; color: var(--text-tertiary); margin-top: 8px;"></p>
+        </div>
+        <style>
+            @keyframes spin {
+                from { transform: rotate(0deg); }
+                to { transform: rotate(360deg); }
+            }
+        </style>
+    `;
+    document.body.appendChild(progressOverlay);
+
+    const progressText = document.getElementById('translate-progress-text');
+    const progressDetail = document.getElementById('translate-progress-detail');
+
+    // Helper to update status
+    const updateStatus = (text, detail = '') => {
+        if (progressText) progressText.textContent = text;
+        if (progressDetail) progressDetail.textContent = detail;
+    };
+
+    updateStatus('Sending to AI...', `${textsToTranslate.length} texts to ${targetLangs.length} languages using ${providerConfig.name}`);
+
+    try {
+        // Build a single prompt with all texts
+        const targetLangNames = targetLangs.map(lang => `${languageNames[lang]} (${lang})`).join(', ');
+
+        // Group texts by screenshot for context-aware prompt
+        const screenshotGroups = {};
+        textsToTranslate.forEach((item, i) => {
+            if (!screenshotGroups[item.screenshotIndex]) {
+                screenshotGroups[item.screenshotIndex] = { headline: null, subheadline: null, indices: {} };
+            }
+            screenshotGroups[item.screenshotIndex][item.type] = item.text;
+            screenshotGroups[item.screenshotIndex].indices[item.type] = i;
+        });
+
+        // Build context-rich prompt showing screenshot groupings
+        let contextualTexts = '';
+        Object.keys(screenshotGroups).sort((a, b) => Number(a) - Number(b)).forEach(screenshotIdx => {
+            const group = screenshotGroups[screenshotIdx];
+            contextualTexts += `\nScreenshot ${Number(screenshotIdx) + 1}:\n`;
+            if (group.headline !== null) {
+                contextualTexts += `  [${group.indices.headline}] Headline: "${group.headline}"\n`;
+            }
+            if (group.subheadline !== null) {
+                contextualTexts += `  [${group.indices.subheadline}] Subheadline: "${group.subheadline}"\n`;
+            }
+        });
+
+        const prompt = `You are a professional translator for App Store screenshot marketing copy. Translate the following texts from ${languageNames[sourceLang]} to these languages: ${targetLangNames}.
+
+CONTEXT: These are marketing texts for app store screenshots. Each screenshot has a headline and/or subheadline that work together as a pair. The subheadline typically elaborates on or supports the headline. When translating, ensure:
+- Headlines and subheadlines on the same screenshot remain thematically consistent
+- Translations across all screenshots maintain a cohesive marketing voice
+- Each translation is concise and punchy (similar length to originals)
+- Marketing-focused and compelling language
+- Culturally appropriate for each target market
+- Natural-sounding in each language
+
+Source texts (${languageNames[sourceLang]}):
+${contextualTexts}
+
+Respond ONLY with a valid JSON object. The structure should be:
+{
+  "0": {"de": "German translation", "fr": "French translation", ...},
+  "1": {"de": "German translation", "fr": "French translation", ...}
+}
+
+Where the keys (0, 1, etc.) correspond to the text indices [N] shown above.
+Translate to these language codes: ${targetLangs.join(', ')}`;
+
+        let responseText;
+
+        if (provider === 'anthropic') {
+            responseText = await translateWithAnthropic(apiKey, prompt);
+        } else if (provider === 'openai') {
+            responseText = await translateWithOpenAI(apiKey, prompt);
+        } else if (provider === 'google') {
+            responseText = await translateWithGoogle(apiKey, prompt);
+        }
+
+        updateStatus('Processing response...', 'Parsing translations');
+
+        // Clean up response - remove markdown code blocks and extract JSON
+        responseText = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+
+        // Try to extract JSON object if there's extra text
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            responseText = jsonMatch[0];
+        }
+
+        console.log('Translation response:', responseText.substring(0, 500) + (responseText.length > 500 ? '...' : ''));
+
+        let translations;
+        try {
+            translations = JSON.parse(responseText);
+        } catch (parseError) {
+            console.error('JSON parse error. Response was:', responseText);
+            throw new Error('Failed to parse translation response. The AI may have returned incomplete text.');
+        }
+
+        updateStatus('Applying translations...', 'Updating screenshots');
+
+        // Apply translations
+        let appliedCount = 0;
+        textsToTranslate.forEach((item, index) => {
+            const itemTranslations = translations[index] || translations[String(index)];
+            if (!itemTranslations) return;
+
+            const screenshot = state.screenshots[item.screenshotIndex];
+            const text = screenshot.text || state.text;
+
+            targetLangs.forEach(lang => {
+                if (itemTranslations[lang]) {
+                    if (item.type === 'headline') {
+                        if (!text.headlines) text.headlines = {};
+                        text.headlines[lang] = itemTranslations[lang];
+                    } else {
+                        if (!text.subheadlines) text.subheadlines = {};
+                        text.subheadlines[lang] = itemTranslations[lang];
+                    }
+                    appliedCount++;
+                }
+            });
+        });
+
+        // Update UI
+        syncUIWithState();
+        updateCanvas();
+        saveState();
+
+        // Remove progress overlay
+        progressOverlay.remove();
+
+        await showAppAlert(`Successfully translated ${appliedCount} text(s)!`, 'success');
+
+    } catch (error) {
+        console.error('Translation error:', error);
+        progressOverlay.remove();
+
+        if (error.message === 'Failed to fetch') {
+            await showAppAlert('Connection failed. Check your API key in Settings.', 'error');
+        } else if (error.message === 'AI_UNAVAILABLE' || error.message.includes('401') || error.message.includes('403')) {
+            await showAppAlert('Invalid API key. Update it in Settings (gear icon).', 'error');
+        } else {
+            await showAppAlert('Translation failed: ' + error.message, 'error');
+        }
+    }
+}
+
 // Provider-specific translation functions
 async function translateWithAnthropic(apiKey, prompt) {
+    const model = getSelectedModel('anthropic');
     const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
@@ -2966,8 +3406,8 @@ async function translateWithAnthropic(apiKey, prompt) {
             "anthropic-dangerous-direct-browser-access": "true"
         },
         body: JSON.stringify({
-            model: "claude-sonnet-4-20250514",
-            max_tokens: 1000,
+            model: model,
+            max_tokens: 4096,
             messages: [{ role: "user", content: prompt }]
         })
     });
@@ -2983,6 +3423,7 @@ async function translateWithAnthropic(apiKey, prompt) {
 }
 
 async function translateWithOpenAI(apiKey, prompt) {
+    const model = getSelectedModel('openai');
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -2990,16 +3431,22 @@ async function translateWithOpenAI(apiKey, prompt) {
             "Authorization": `Bearer ${apiKey}`
         },
         body: JSON.stringify({
-            model: "gpt-4o-mini",
-            max_tokens: 1000,
+            model: model,
+            max_completion_tokens: 16384,
             messages: [{ role: "user", content: prompt }]
         })
     });
 
     if (!response.ok) {
         const status = response.status;
+        const errorBody = await response.json().catch(() => ({}));
+        console.error('OpenAI API Error:', {
+            status,
+            model,
+            error: errorBody
+        });
         if (status === 401 || status === 403) throw new Error('AI_UNAVAILABLE');
-        throw new Error(`API request failed: ${status}`);
+        throw new Error(`API request failed: ${status} - ${errorBody.error?.message || 'Unknown error'}`);
     }
 
     const data = await response.json();
@@ -3007,7 +3454,8 @@ async function translateWithOpenAI(apiKey, prompt) {
 }
 
 async function translateWithGoogle(apiKey, prompt) {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+    const model = getSelectedModel('google');
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json"
@@ -3034,27 +3482,7 @@ function setTranslateStatus(message, type) {
 }
 
 // Settings modal functions
-const aiProviders = {
-    anthropic: {
-        name: 'Anthropic (Claude)',
-        keyPrefix: 'sk-ant-',
-        storageKey: 'claudeApiKey'
-    },
-    openai: {
-        name: 'OpenAI (GPT)',
-        keyPrefix: 'sk-',
-        storageKey: 'openaiApiKey'
-    },
-    google: {
-        name: 'Google (Gemini)',
-        keyPrefix: 'AIza',
-        storageKey: 'googleApiKey'
-    }
-};
-
-function getSelectedProvider() {
-    return localStorage.getItem('aiProvider') || 'anthropic';
-}
+// LLM configuration is in llm.js (llmProviders, getSelectedModel, getSelectedProvider)
 
 function openSettingsModal() {
     // Load saved provider
@@ -3066,8 +3494,8 @@ function openSettingsModal() {
     // Show the correct API section
     updateProviderSection(savedProvider);
 
-    // Load all saved API keys
-    Object.entries(aiProviders).forEach(([provider, config]) => {
+    // Load all saved API keys and models
+    Object.entries(llmProviders).forEach(([provider, config]) => {
         const savedKey = localStorage.getItem(config.storageKey);
         const input = document.getElementById(`settings-api-key-${provider}`);
         if (input) {
@@ -3085,6 +3513,16 @@ function openSettingsModal() {
                 status.className = 'settings-key-status';
             }
         }
+
+        // Populate and load saved model selection
+        const modelSelect = document.getElementById(`settings-model-${provider}`);
+        if (modelSelect) {
+            // Populate options from llm.js config
+            modelSelect.innerHTML = generateModelOptions(provider);
+            // Set saved value
+            const savedModel = localStorage.getItem(config.modelStorageKey) || config.defaultModel;
+            modelSelect.value = savedModel;
+        }
     });
 
     document.getElementById('settings-modal').classList.add('visible');
@@ -3101,9 +3539,9 @@ function saveSettings() {
     const selectedProvider = document.querySelector('input[name="ai-provider"]:checked').value;
     localStorage.setItem('aiProvider', selectedProvider);
 
-    // Save all API keys
+    // Save all API keys and models
     let allValid = true;
-    Object.entries(aiProviders).forEach(([provider, config]) => {
+    Object.entries(llmProviders).forEach(([provider, config]) => {
         const input = document.getElementById(`settings-api-key-${provider}`);
         const status = document.getElementById(`settings-key-status-${provider}`);
         if (!input || !status) return;
@@ -3125,6 +3563,12 @@ function saveSettings() {
             localStorage.removeItem(config.storageKey);
             status.textContent = '';
             status.className = 'settings-key-status';
+        }
+
+        // Save model selection
+        const modelSelect = document.getElementById(`settings-model-${provider}`);
+        if (modelSelect) {
+            localStorage.setItem(config.modelStorageKey, modelSelect.value);
         }
     });
 
@@ -3230,6 +3674,74 @@ function handleFiles(files) {
     processFilesSequentially(Array.from(files).filter(f => f.type.startsWith('image/')));
 }
 
+// Handle files from Electron menu (receives array of {dataUrl, name})
+function handleFilesFromElectron(filesData) {
+    processElectronFilesSequentially(filesData);
+}
+
+async function processElectronFilesSequentially(filesData) {
+    for (const fileData of filesData) {
+        await processElectronImageFile(fileData);
+    }
+}
+
+async function processElectronImageFile(fileData) {
+    return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = async () => {
+            // Detect device type based on aspect ratio
+            const ratio = img.width / img.height;
+            let deviceType = 'iPhone';
+            if (ratio > 0.6) {
+                deviceType = 'iPad';
+            }
+
+            // Detect language from filename
+            const detectedLang = detectLanguageFromFilename(fileData.name);
+
+            // Check if this is a localized version of an existing screenshot
+            const existingIndex = findScreenshotByBaseFilename(fileData.name);
+
+            if (existingIndex !== -1) {
+                // Found a screenshot with matching base filename
+                const existingScreenshot = state.screenshots[existingIndex];
+                const hasExistingLangImage = existingScreenshot.localizedImages?.[detectedLang]?.image;
+
+                if (hasExistingLangImage) {
+                    // There's already an image for this language - show dialog
+                    const choice = await showDuplicateDialog({
+                        existingIndex: existingIndex,
+                        detectedLang: detectedLang,
+                        newImage: img,
+                        newSrc: fileData.dataUrl,
+                        newName: fileData.name
+                    });
+
+                    if (choice === 'replace') {
+                        addLocalizedImage(existingIndex, detectedLang, img, fileData.dataUrl, fileData.name);
+                    } else if (choice === 'create') {
+                        createNewScreenshot(img, fileData.dataUrl, fileData.name, detectedLang, deviceType);
+                    }
+                } else {
+                    // No image for this language yet - just add it silently
+                    addLocalizedImage(existingIndex, detectedLang, img, fileData.dataUrl, fileData.name);
+                }
+            } else {
+                createNewScreenshot(img, fileData.dataUrl, fileData.name, detectedLang, deviceType);
+            }
+
+            // Update 3D texture if in 3D mode
+            const ss = getScreenshotSettings();
+            if (ss.use3D && typeof updateScreenTexture === 'function') {
+                updateScreenTexture();
+            }
+            updateCanvas();
+            resolve();
+        };
+        img.src = fileData.dataUrl;
+    });
+}
+
 async function processFilesSequentially(files) {
     for (const file of files) {
         await processImageFile(file);
@@ -3256,23 +3768,30 @@ async function processImageFile(file) {
                 const existingIndex = findScreenshotByBaseFilename(file.name);
 
                 if (existingIndex !== -1) {
-                    // Duplicate found - show dialog
-                    const choice = await showDuplicateDialog({
-                        existingIndex: existingIndex,
-                        detectedLang: detectedLang,
-                        newImage: img,
-                        newSrc: e.target.result,
-                        newName: file.name
-                    });
+                    // Found a screenshot with matching base filename
+                    const existingScreenshot = state.screenshots[existingIndex];
+                    const hasExistingLangImage = existingScreenshot.localizedImages?.[detectedLang]?.image;
 
-                    if (choice === 'replace') {
-                        // Replace the localized version
+                    if (hasExistingLangImage) {
+                        // There's already an image for this language - show dialog
+                        const choice = await showDuplicateDialog({
+                            existingIndex: existingIndex,
+                            detectedLang: detectedLang,
+                            newImage: img,
+                            newSrc: e.target.result,
+                            newName: file.name
+                        });
+
+                        if (choice === 'replace') {
+                            addLocalizedImage(existingIndex, detectedLang, img, e.target.result, file.name);
+                        } else if (choice === 'create') {
+                            createNewScreenshot(img, e.target.result, file.name, detectedLang, deviceType);
+                        }
+                        // 'ignore' does nothing
+                    } else {
+                        // No image for this language yet - just add it silently
                         addLocalizedImage(existingIndex, detectedLang, img, e.target.result, file.name);
-                    } else if (choice === 'create') {
-                        // Create as new screenshot
-                        createNewScreenshot(img, e.target.result, file.name, detectedLang, deviceType);
                     }
-                    // 'ignore' does nothing
                 } else {
                     // No duplicate - create new screenshot
                     createNewScreenshot(img, e.target.result, file.name, detectedLang, deviceType);
@@ -3299,6 +3818,11 @@ function createNewScreenshot(img, src, name, lang, deviceType) {
         src: src,
         name: name
     };
+
+    // Auto-add language to project if not already present
+    if (!state.projectLanguages.includes(lang)) {
+        addProjectLanguage(lang);
+    }
 
     // Each screenshot gets its own copy of all settings from defaults
     state.screenshots.push({
@@ -3368,12 +3892,28 @@ function updateScreenshotList() {
                         </svg>
                         Manage Translations...
                     </button>
+                    <button class="screenshot-menu-item screenshot-replace" data-index="${index}">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                            <polyline points="17 8 12 3 7 8"/>
+                            <line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                        Replace Screenshot...
+                    </button>
                     <button class="screenshot-menu-item screenshot-transfer" data-index="${index}">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <rect x="9" y="9" width="13" height="13" rx="2"/>
                             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
                         </svg>
                         Copy style from...
+                    </button>
+                    <button class="screenshot-menu-item screenshot-apply-all" data-index="${index}">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="9" y="9" width="13" height="13" rx="2"/>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                            <path d="M14 14l2 2 4-4"/>
+                        </svg>
+                        Apply style to all...
                     </button>
                     <button class="screenshot-menu-item screenshot-delete danger" data-index="${index}">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -3559,6 +4099,16 @@ function updateScreenshotList() {
             });
         }
 
+        // Replace button handler
+        const replaceBtn = item.querySelector('.screenshot-replace');
+        if (replaceBtn) {
+            replaceBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                menu?.classList.remove('open');
+                replaceScreenshot(index);
+            });
+        }
+
         // Transfer button handler
         const transferBtn = item.querySelector('.screenshot-transfer');
         if (transferBtn) {
@@ -3567,6 +4117,16 @@ function updateScreenshotList() {
                 menu?.classList.remove('open');
                 state.transferTarget = index;
                 updateScreenshotList();
+            });
+        }
+
+        // Apply style to all button handler
+        const applyAllBtn = item.querySelector('.screenshot-apply-all');
+        if (applyAllBtn) {
+            applyAllBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                menu?.classList.remove('open');
+                showApplyStyleModal(index);
             });
         }
 
@@ -3655,6 +4215,111 @@ function transferStyle(sourceIndex, targetIndex) {
     syncUIWithState();
     updateGradientStopsUI();
     updateCanvas();
+}
+
+// Track which screenshot to apply style from
+let applyStyleSourceIndex = null;
+
+function showApplyStyleModal(sourceIndex) {
+    applyStyleSourceIndex = sourceIndex;
+    document.getElementById('apply-style-modal').classList.add('visible');
+}
+
+function applyStyleToAll() {
+    if (applyStyleSourceIndex === null) return;
+
+    const source = state.screenshots[applyStyleSourceIndex];
+    if (!source) {
+        applyStyleSourceIndex = null;
+        return;
+    }
+
+    // Apply style to all other screenshots
+    state.screenshots.forEach((target, index) => {
+        if (index === applyStyleSourceIndex) return; // Skip source
+
+        // Deep copy background settings
+        target.background = JSON.parse(JSON.stringify(source.background));
+        // Handle background image separately (not JSON serializable)
+        if (source.background.image) {
+            target.background.image = source.background.image;
+        }
+
+        // Deep copy screenshot settings
+        target.screenshot = JSON.parse(JSON.stringify(source.screenshot));
+
+        // Copy text styling but preserve actual text content
+        const targetHeadlines = target.text.headlines;
+        const targetSubheadlines = target.text.subheadlines;
+        target.text = JSON.parse(JSON.stringify(source.text));
+        // Restore original text content
+        target.text.headlines = targetHeadlines;
+        target.text.subheadlines = targetSubheadlines;
+    });
+
+    applyStyleSourceIndex = null;
+
+    // Update UI
+    updateScreenshotList();
+    syncUIWithState();
+    updateGradientStopsUI();
+    updateCanvas();
+}
+
+// Replace screenshot image via file picker
+function replaceScreenshot(index) {
+    const screenshot = state.screenshots[index];
+    if (!screenshot) return;
+
+    // Create a hidden file input
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'image/*';
+    fileInput.style.display = 'none';
+    document.body.appendChild(fileInput);
+
+    fileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) {
+            document.body.removeChild(fileInput);
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const img = new Image();
+            img.onload = () => {
+                // Get the current language
+                const lang = state.currentLanguage;
+
+                // Update the localized image for the current language
+                if (!screenshot.localizedImages) {
+                    screenshot.localizedImages = {};
+                }
+
+                screenshot.localizedImages[lang] = {
+                    image: img,
+                    src: event.target.result,
+                    name: file.name
+                };
+
+                // Also update legacy image field for compatibility
+                screenshot.image = img;
+
+                // Update displays
+                updateScreenshotList();
+                updateCanvas();
+                saveState();
+            };
+            img.src = event.target.result;
+        };
+        reader.readAsDataURL(file);
+
+        document.body.removeChild(fileInput);
+    });
+
+    // Trigger file dialog
+    fileInput.click();
 }
 
 function updateGradientStopsUI() {
