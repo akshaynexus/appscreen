@@ -22,6 +22,49 @@ body {
     min-height: 100vh;
 }
 
+/* Electron: Make top area draggable for window movement */
+html.electron-app {
+    --electron-titlebar-height: 38px;
+}
+
+html.electron-app body {
+    padding-top: var(--electron-titlebar-height);
+    overflow: hidden; /* Prevent body scroll in Electron */
+}
+
+/* Fixed drag region - added via JS as a real DOM element */
+.electron-titlebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--electron-titlebar-height, 38px);
+    -webkit-app-region: drag;
+    z-index: 99999;
+    background: var(--bg-secondary);
+    pointer-events: auto;
+}
+
+/* Adjust heights for Electron titlebar */
+html.electron-app .app-container {
+    min-height: calc(100vh - var(--electron-titlebar-height));
+    max-height: calc(100vh - var(--electron-titlebar-height));
+}
+
+html.electron-app .sidebar {
+    max-height: calc(100vh - var(--electron-titlebar-height));
+}
+
+html.electron-app .right-sidebar {
+    max-height: calc(100vh - var(--electron-titlebar-height));
+}
+
+/* Hide About and Settings buttons in Electron (available via menu instead) */
+html.electron-app #about-btn,
+html.electron-app #settings-btn {
+    display: none;
+}
+
 .app-container {
     display: grid;
     grid-template-columns: 320px 1fr 340px;
@@ -241,7 +284,7 @@ body {
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 4px;
-    min-width: 160px;
+    min-width: 200px;
     z-index: 100;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
@@ -1428,6 +1471,41 @@ input[type="range"]::-webkit-slider-thumb {
 
 .settings-key-status.error {
     color: #ff453a;
+}
+
+.settings-model-group {
+    margin-top: 12px;
+}
+
+.settings-model-label {
+    display: block;
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+}
+
+.settings-model-select {
+    width: 100%;
+    padding: 10px 12px;
+    font-size: 14px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-primary);
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+}
+
+.settings-model-select:hover {
+    border-color: var(--text-secondary);
+}
+
+.settings-model-select:focus {
+    outline: none;
+    border-color: var(--accent);
 }
 
 .settings-link {
